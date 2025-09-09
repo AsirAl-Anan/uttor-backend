@@ -33,8 +33,8 @@ app.use(express.urlencoded({ extended: true }));
 // Cookie parser
 app.use(cookieParser());
 export const sessionMiddleware = session({
-  name:"session",
-  secret: process.env.SESSION_SECRET ,
+  name: "session",
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({ 
@@ -43,11 +43,13 @@ export const sessionMiddleware = session({
     ttl: 14 * 24 * 60 * 60
   }),
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production', // must be true for HTTPS
     httpOnly: true,
-    maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // cross-site in production
   }
-})
+});
+
 // Session configuration
 app.use(sessionMiddleware);
 
