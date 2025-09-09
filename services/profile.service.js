@@ -1,5 +1,5 @@
 import User from '../models/User.js';
-import Preferences from '../models/Preferences.js';
+import Preferences from '../models/preferences.js';
 import {Chat} from '../models/chat.model.js';
 export const checkUsernameExists = async (username, excludeUserId = null) => {
   const query = { username };
