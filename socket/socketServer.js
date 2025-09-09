@@ -9,7 +9,7 @@ import passport from "../config/passport.js";
 export const initializeSocketServer = (httpServer) => {
   const io = new Server(httpServer, {
     cors: {
-      origin: process.env.CLIENT_URL || "http://localhost:8080",
+      origin: [process.env.CLIENT_URL , "http://localhost:8080" , 'https://preview--wisdom-spark-ai.lovable.app', process.env.PRODUCTION_CLIENT_URL],
       methods: ["GET", "POST"],
        credentials: true
     },
