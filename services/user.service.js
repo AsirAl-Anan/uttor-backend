@@ -1,5 +1,5 @@
 import User from '../models/User.js';
-import Preferences from '../models/Preferences.js';
+import Preferences from '../models/preferences.js';
 import { Chat } from '../models/chat.model.js';
 import { Message } from '../models/message.model.js';
 export const findUserById = async (id) => {
