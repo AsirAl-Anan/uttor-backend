@@ -11,13 +11,13 @@ import userRoutes from './routes/user.routes.js'; // NEW
 import { errorHandler, notFound } from './middlewares/error.js';
 
 const app = express();
-
+app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet());
 
 // CORS configuration
 app.use(cors({
-  origin:[ process.env.FRONTEND_URL ,'http://localhost:3000' , 'https://preview--wisdom-spark-ai.lovable.app'],
+  origin:[ process.env.FRONTEND_URL ,'http://localhost:8080' , 'https://preview--wisdom-spark-ai.lovable.app', process.env.PRODUCTION_CLIENT_URL],
   credentials: true
 }));
 
