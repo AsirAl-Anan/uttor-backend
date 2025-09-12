@@ -35,6 +35,7 @@ export const authenticateJWT = async (req, res, next) => {
 
 export const authenTicateSession =async (req, res, next) => {
   console.log(req.session)
+ 
   if(!req.session.passport){
    
     return errorResponse(res, 401, 'Session not found.');
