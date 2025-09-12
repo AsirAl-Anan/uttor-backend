@@ -32,3 +32,10 @@ export const llmNonStreaming = new ChatGoogleGenerativeAI({
   modelName: "gemini-2.5-flash-lite", // Or another suitable model
   temperature: 0.2,
 });
+export const fastStreamingLLM = new ChatGoogleGenerativeAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  modelName: "gemini-2.5-flash-lite", // Or another suitable model
+  temperature: 0.2,
+  // IMPORTANT: For streaming to work correctly.  
+  streaming: true,
+});

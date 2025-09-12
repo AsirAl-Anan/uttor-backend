@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import {academicDb} from "../config/db";
+import {academicDb} from "../config/db.js";
 const subjectSchema = new mongoose.Schema({
   englishName: { type: String, required: true },
   banglaName: { type: String, required: true },

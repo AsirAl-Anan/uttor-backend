@@ -1,6 +1,7 @@
 // models/CreativeQuestion.js
 import mongoose from "mongoose";
 import { academicDb } from "../config/db.js";
+
 // Constants for enums
 const BOARDS = [
   'Dhaka', 'Rajshahi', 'Chittagong', 
@@ -63,52 +64,16 @@ const creativeQuestionSchema = new mongoose.Schema({
     chapterId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'Chapter' },
     englishName: { type: String, required: true },
     banglaName: { type: String, required: true },
+  },
+  aliases:{
+    english: [{ type: String }],
+    bangla: [{ type: String }],
+    banglish: [{ type: String }],
   }
 
 }, { timestamps: true });
 
-// Add a pre-save hook to ensure dTopic, dSubTopic and dAnswer are required if 'd' is provided
-// creativeQuestionSchema.pre('save', function (next) {
-//   if (this.d) {
-//     if (!this.dTopic || !this.dTopic.topicId) {
-//       return next(new Error("dTopic.topicId is required when 'd' field is provided."));
-//     }
-//     if (!this.dAnswer) {
-//       return next(new Error("dAnswer is required when 'd' field is provided."));
-//     }
-//     // dSubTopic is optional, so no check needed for its existence or fields
-//   }
-//   next();
-// });
-
-// // Add a pre-validate hook to ensure dTopic and cTopic details are provided
-// creativeQuestionSchema.pre('validate', function (next) {
-//   // Validate cTopic always
-//   if (!this.cTopic || !this.cTopic.topicId || !this.cTopic.englishName || !this.cTopic.banglaName) {
-//     return next(new Error("cTopic.topicId, cTopic.englishName, and cTopic.banglaName are required."));
-//   }
-
-//   // Validate dTopic details if 'd' exists
-//   if (this.d && (!this.dTopic || !this.dTopic.englishName || !this.dTopic.banglaName)) {
-//     return next(new Error("dTopic englishName and banglaName are required when 'd' field is provided."));
-//   }
-
-//   // Validate cSubTopic details if cSubTopic exists (i.e., topicId is present)
-//   if (this.cSubTopic && this.cSubTopic.topicId) {
-//     if (!this.cSubTopic.englishName || !this.cSubTopic.banglaName) {
-//       return next(new Error("If cSubTopic.topicId is provided, cSubTopic.englishName and cSubTopic.banglaName are required."));
-//     }
-//   }
-
-//   // Validate dSubTopic details if dSubTopic exists (i.e., topicId is present)
-//   if (this.d && this.dSubTopic && this.dSubTopic.topicId) {
-//     if (!this.dSubTopic.englishName || !this.dSubTopic.banglaName) {
-//       return next(new Error("If dSubTopic.topicId is provided, dSubTopic.englishName and dSubTopic.banglaName are required."));
-//     }
-//   }
-
-//   next();
-// });
+// (All your commented-out 'pre' hooks are here...)
 
 // Optional: Add indexes for better query performance on frequently searched fields like topic IDs
 // creativeQuestionSchema.index({ 'cTopic.topicId': 1 });
@@ -116,5 +81,13 @@ const creativeQuestionSchema = new mongoose.Schema({
 // creativeQuestionSchema.index({ 'cSubTopic.topicId': 1 });
 // creativeQuestionSchema.index({ 'dSubTopic.topicId': 1 });
 
+
+// *** ADD THIS LINE FOR TEXT SEARCH ***
+// This creates the necessary text index for the $text operator to work.
+creativeQuestionSchema.index({ stem: 'text',a: 'text', b: 'text', c: 'text', d: 'text' });
+creativeQuestionSchema.index({ 'cTopic.englishName': 'text', 'cTopic.banglaName': 'text'})
+creativeQuestionSchema.index({ 'dTopic.englishName': 'text', 'dTopic.banglaName': 'text'})
+creativeQuestionSchema.index({'aliases.english': 'text', 'aliases.bangla': 'text', 'aliases.banglish': 'text'})
+creativeQuestionSchema.index({'cType': 'text', 'dType': 'text'})
 const CreativeQuestion = academicDb.model('CreativeQuestion', creativeQuestionSchema);
 export default CreativeQuestion;

@@ -1,11 +1,13 @@
 import { Server } from "socket.io";
 import logger from "../utils/logger.js";
 import * as authService  from "../services/auth.service.js"; // Corrected import
-import { ragService } from "../services/rag.service.js";
+// import { ragService } from "../services/rag.service.js"; // REMOVED
+import { intentService } from "../services/intent.service.js"; // ADDED
 import { chatMemoryService } from "../services/chatMemory.service.js";
 import { authenticateSocket } from "../middlewares/auth.js";
 import { sessionMiddleware } from "../app.js";
 import passport from "../config/passport.js";
+
 export const initializeSocketServer = (httpServer) => {
   const io = new Server(httpServer, {
     cors: {
@@ -15,17 +17,6 @@ export const initializeSocketServer = (httpServer) => {
     },
   });
 
-  // Middleware for JWT Authentication
-  // io.use((socket, next) => {
-  //   const token = socket.handshake.auth.token || socket.handshake.query.token;
-  //   const user = authService.verifySocketToken(token);
-  //   if (user) {
-  //     socket.user = user;
-  //     next();
-  //   } else {
-  //     next(new Error("Authentication error"));
-  //   }
-  // });
   const wrap = (middleware) => (socket, next) =>
     middleware(socket.request, {}, next);
 
@@ -38,55 +29,44 @@ export const initializeSocketServer = (httpServer) => {
   io.on("connection", (socket) => {
     logger.info(`User connected: ${socket.id}, userId: ${socket.user.userId}`);
 
-    // This event is still useful for re-joining an existing chat room when a user re-opens the app
     socket.on("join_chat", (chatId) => {
       socket.join(chatId);
       logger.info(`Socket ${socket.id} joined chat room: ${chatId}`);
     });
     
     socket.on("chat_message", async (data) => {
-      // Use 'let' because chatId can be reassigned if it's a new chat
       let { chatId, content } = data; 
 
-      // We only require content.text. chatId can be null for a new chat.
       if (!content || !content.text) {
         socket.emit("chat_error", { message: "Invalid message payload. 'content.text' is required." });
         return;
       }
       
       try {
-        // --- NEW CHAT LOGIC ---
         if (!chatId) {
           const newChat = await chatMemoryService.createNewChat({ userId: socket.user.userId, query:content.text });
-          chatId = newChat._id.toString(); // Reassign to the newly created ID
-
-          // Immediately inform the client of the new chat session ID
+          chatId = newChat._id.toString(); 
           socket.emit("chat_session_created", { chatId: chatId });
-          
-          // Automatically join the room for the new chat
           socket.join(chatId);
           logger.info(`Socket ${socket.id} auto-joined new chat room: ${chatId}`);
         }
-        // --- END NEW CHAT LOGIC ---
 
-        // 1. Save user's message using the (potentially new) chatId
         await chatMemoryService.saveMessage({
           chatId,
           sender: 'user',
           content,
         });
 
-        // 2. Start the RAG pipeline
-        const stream = await ragService.generateResponseStream({
+        // 2. Start the INTENT pipeline (this is the key change)
+        const stream = await intentService.generateResponseStream({
           query: content.text,
           chatId,
           userId: socket?.user
         });
 
         let fullResponse = "";
-        // 3. Stream the response back to the client
+        // 3. Stream the response back to the client (no changes here)
         for await (const chunk of stream) {
-            // LangChain can sometimes send empty chunks
             const text = chunk?.text || ""; 
             if (text) {
                 socket.emit("chat_token", { chatId, token: text });
