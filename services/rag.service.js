@@ -6,7 +6,7 @@ import { chatMemoryService } from './chatMemory.service.js';
 import logger from '../utils/logger.js';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
-import { llm } from '../llm/geminiClient.js';
+import { llmNonStreaming } from '../llm/geminiClient.js';
 import User from '../models/User.js';
 /**
  * Orchestrates the entire RAG pipeline from user query to a stream of AI responses.
@@ -21,7 +21,7 @@ export const generateChatName = async ({ query }) => {
     
     const promptTemplate = PromptTemplate.fromTemplate(prompt);
 
-    const chain = promptTemplate.pipe(llm).pipe(new StringOutputParser());
+    const chain = promptTemplate.pipe(llmNonStreaming).pipe(new StringOutputParser());
 
     const response = await chain.invoke({ query });
     console.log("it is  response yippe",response)
@@ -58,7 +58,6 @@ if (user?.version === "Bangla") {
 }
 
 const normalizedQuery = normalizedQueryResponse.concat(user?.version + versionText);
-console.log("it is  normalizedQuery yippe",normalizedQuery)
     // With RunnableSequence, the response is directly the LLM output (AIMessage)
     // const normalizedQuery = normalizedQueryResponse.content?.trim() || normalizedQueryResponse.text?.trim();
     // 3. Embed Normalized Query
@@ -66,8 +65,7 @@ console.log("it is  normalizedQuery yippe",normalizedQuery)
 
     // 4. Perform Vector Search
     const context = await vectorSearchService.searchEmbeddings(queryVector);
-    console.log("it is  context yippe",context)
-    console.log("version ", user?.version)
+   
     // 5. Generate Answer with Context and History
     // The .stream() method is crucial for token-by-token streaming
     const stream = await answerChain.stream({

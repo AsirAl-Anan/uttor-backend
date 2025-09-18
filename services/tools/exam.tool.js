@@ -1,170 +1,340 @@
 import mongoose from 'mongoose';
-import McqExam from '../../models/mcq.exam.model.js';
 import CreativeQuestion from '../../models/creativeQuestion.model.js';
 import Subject from '../../models/subject.model.js';
 import User from '../../models/User.js';
 import logger from '../../utils/logger.js';
-
-const TIME_PER_MCQ_MIN = 1;
+import { responseChain } from '../../llm/chains/response.chain.js';
+// Import the new chain
+import { contextualParameterChain } from '../../llm/chains/parameter.filler.chain.js';
+import { CqExam } from '../../models/cq.exam.model.js';
 const TIME_PER_CQ_MIN = 20;
 
 const calculateExamTime = (examType, questionCount) => {
-  if (examType === 'MCQ') return questionCount * TIME_PER_MCQ_MIN;
   if (examType === 'CQ') return questionCount * TIME_PER_CQ_MIN;
   return 0;
 };
 
-const formatMissingItems = (items) => {
-  if (items.length === 0) return '';
-  if (items.length === 1) return items[0];
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  const last = items.pop();
-  return `${items.join(', ')}, and ${last}`;
-};
-
-const handleCreateExam = async ({ parameters, userId }) => {
-  const { exam_type, subject, chapter, question_count = 10, source = 'database' } = parameters;
-
-  logger.info(`[Exam Tool] Initial request for ${exam_type} exam. Subject: ${subject}, Chapter: ${chapter}`);
-
-  async function* resultStream() {
-    try {
-      // Step 1: Check if essential information is missing and ask for it.
-      const requiredFields = {
-        exam_type: 'the exam type (MCQ or CQ)',
-        subject: 'the subject',
-        chapter: 'the chapter',
-      };
-      const missingFields = Object.keys(requiredFields).filter(field => !parameters[field]);
-
-      if (missingFields.length > 0) {
-        const friendlyMissingNames = missingFields.map(field => requiredFields[field]);
-        const formattedMissingText = formatMissingItems(friendlyMissingNames);
-        let response = "";
-        
-        if (exam_type) response = `Okay, a ${exam_type} exam. Got it. `;
-        else if (subject) response = `Okay, an exam on ${subject}. I can do that. `;
-        else response = 'I can definitely create an exam for you. ';
-        
-        response += `To proceed, I just need to know ${formattedMissingText}.`;
-        yield { text: response };
-        return;
-      }
-      
-      // Step 2: Get user context.
-      const user = await User.findById(userId.userId);
-      console.log("it  hello user nafisa",user)
-      if (!user) {
-        yield { text: "I'm sorry, I couldn't find your user profile to determine your academic level." };
-        return;
-      }
-      
-      // Step 3: Validate the subject. If not found, provide a helpful list.
-      const subjectRegex = new RegExp(subject.trim(), 'i');
-      const subjectDoc = await Subject.findOne({
-        level: user.level,
-        $or: [
-          { englishName: subjectRegex },
-          { banglaName: subjectRegex },
-          { 'aliases.english': subjectRegex },
-          { 'aliases.bangla': subjectRegex },
-          { 'aliases.banglish': subjectRegex },
-        ]
-      });
-
-      if (!subjectDoc) {
-        const availableSubjects = await Subject.find({ level: user.level }, 'englishName');
-        const subjectNames = availableSubjects.map(s => s.englishName).join(', ');
-        const response = `I couldn't find a subject matching "${subject}". For your level (${user.level}), the available subjects are: ${subjectNames}. Please choose one.`;
-        yield { text: response };
-        return;
-      }
-      const canonicalSubjectName = subjectDoc.englishName;
-
-      // ===================================================================
-      // ===== START: NEW ROBUST CHAPTER VALIDATION LOGIC ================
-      // ===================================================================
-
-      // Step 4: Validate the chapter by name only. If not found, list available chapters.
-      const chapterInput = chapter.trim();
-      const chapterNameRegex = new RegExp(chapterInput, 'i');
-
-      const matchedChapter = subjectDoc.chapters.find(chap => 
-          chapterNameRegex.test(chap.englishName) || chapterNameRegex.test(chap.banglaName)
-      );
-      
-      if (!matchedChapter) {
-        // Format the list of available chapters for the found subject.
-        const chapterNames = subjectDoc.chapters
-          .map((chap, index) => `${index + 1}. ${chap.englishName}`)
-          .join('\n');
-
-        const response = `I found the subject for the text"${canonicalSubjectName}," but couldn't find a chapter matching "${chapterInput}". Here are the available chapters for this subject:\n\n${chapterNames}\n\nPlease choose a chapter from the list.`;
-        yield { text: response };
-        return;
-      }
-      const canonicalChapterName = matchedChapter.englishName;
-
-      // ===================================================================
-      // ===== END: NEW ROBUST CHAPTER VALIDATION LOGIC ==================
-      // ===================================================================
-
-      // Step 5: Proceed with exam creation using the validated, canonical names.
-      let responseText = "";
-      if (source === 'database') {
-        const timeLimitInMinutes = calculateExamTime(exam_type, question_count);
-        
-        if (exam_type === 'MCQ') {
-          const examData = {
-              title: `MCQ Exam: ${canonicalSubjectName} - ${canonicalChapterName}`,
-              level: user.level,
-              subject: canonicalSubjectName,
-              chapter: canonicalChapterName,
-              totalMarks: question_count,
-              timeLimitInMinutes,
-              questions: [],
-              creator: new mongoose.Types.ObjectId(userId.userId),
-          };
-          const newMcqExam = new McqExam(examData);
-          await newMcqExam.save();
-          responseText = `I have prepared a ${question_count}-question MCQ exam for you on **${canonicalSubjectName} - ${canonicalChapterName}**. It should take approximately **${timeLimitInMinutes} minutes** to complete. You can find it in your exams dashboard.`;
-        
-        } else if (exam_type === 'CQ') {
-          logger.info(`[Exam Tool] Fetching ${question_count} CQs for Subject: ${canonicalSubjectName}, Chapter: ${canonicalChapterName}`);
-          const questions = await CreativeQuestion.aggregate([
-            { $match: { 'chapter.englishName': canonicalChapterName } },
-            { $sample: { size: question_count } }
-          ]);
-
-          if (questions.length === 0) {
-              yield { text: `I couldn't find any creative questions for **${canonicalSubjectName} - ${canonicalChapterName}**. Please try a different chapter.`};
-              return;
-          }
-           if (questions.length < question_count) {
-              yield { text: `I could only find ${questions.length} creative questions for **${canonicalSubjectName} - ${canonicalChapterName}**. I can create an exam with these if you'd like.`};
-              return;
-          }
-          responseText = `I have prepared a ${question_count}-question Creative Question exam for you on **${canonicalSubjectName} - ${canonicalChapterName}**. It should take approximately **${timeLimitInMinutes} minutes** to complete. You can find it in your exams dashboard.`;
-        
-        } else {
-           yield { text: "I can only create 'MCQ' or 'CQ' exams at the moment." };
-           return;
-        }
-      } else {
-        responseText = "Creating exams with AI-generated questions is a feature coming soon!";
-      }
-
-      yield { text: responseText };
-
-    } catch (error) {
-      logger.error('[Exam Tool] Error creating exam:', error);
-      yield { text: "I'm sorry, I ran into a problem while creating the exam. Please try again later." };
+// This streaming helper is still useful for long responses without buttons.
+async function* streamLlmResponse(llmPromise) {
+    const responseStream = await llmPromise;
+    for await (const chunk of responseStream) {
+        yield { text: chunk };
     }
-  }
+}
 
-  return resultStream();
+const handleCreateExam = async function* ({ parameters, userId, chat_history }) {
+    // We will use a mutable variable for parameters now
+    let contextualParams = parameters;
+
+    try {
+        const user = await User.findById(userId.userId);
+        if (!user) {
+            yield { text: "I'm sorry, I couldn't find your user profile." };
+            return;
+        }
+        const userVersion = (user?.version || 'English').toLowerCase();
+
+        // =================================================================
+        // =========== FIX: USE THE CONTEXT FILLER CHAIN FIRST =============
+        // =================================================================
+        if (!parameters.exam_type || !parameters.subject || !parameters.chapter || !parameters.question_count) {
+            logger.info('[Exam Tool] Incomplete parameters. Attempting to fill from history.');
+            try {
+                contextualParams = await contextualParameterChain.invoke({
+                    parameters: parameters,
+                    chat_history: chat_history,
+                });
+                logger.info('[Exam Tool] Parameters filled from history:', contextualParams);
+            } catch (e) {
+                logger.error('[Exam Tool] Contextual parameter filler failed:', e);
+                contextualParams = parameters;
+            }
+        }
+        // ======================= END OF FIX ==============================
+
+        const { exam_type, subject, chapter, question_count, source = 'database' } = contextualParams;
+
+        logger.info(`[Exam Tool] Initial Parameters. User: ${userId.userId}, Type: ${exam_type}, Subject: ${subject}, Chapter: ${chapter}, Count: ${question_count}`);
+
+        // --- Step 1: Check for essential information (exam type, subject, chapter) ---
+        const missingFields = [];
+        if (!exam_type) missingFields.push('the exam type (like MCQ or CQ)');
+        if (!subject) missingFields.push('the subject');
+        if (!chapter) missingFields.push('the chapter');
+
+        if (missingFields.length > 0) {
+            const llmPromise = responseChain.invoke({
+                situation: 'MISSING_INFO',
+                parameters: { missing: missingFields, provided: { exam_type, subject, chapter } },
+                user_Language: userVersion,
+                chat_history
+            });
+            yield* await streamLlmResponse(llmPromise);
+            return;
+        }
+
+        // --- Step 2: Validate Subject (and handle ambiguity) ---
+        const subjectRegex = new RegExp(subject.trim(), 'i');
+        const subjectDocs = await Subject.find({
+            level: user.level,
+            version: userVersion,
+            $or: [
+                { name: subjectRegex },
+                { 'aliases.english': subjectRegex },
+                { 'aliases.bangla': subjectRegex },
+                { 'aliases.banglish': subjectRegex },
+            ]
+        });
+
+        if (subjectDocs.length === 0) {
+            const availableSubjects = await Subject.find({ level: user.level, version: userVersion }, 'name');
+            const llmPromise = responseChain.invoke({
+                situation: 'SUBJECT_NOT_FOUND',
+                parameters: { subjectInput: subject, availableSubjects: availableSubjects.map(s => s.name) },
+                user_Language: userVersion,
+                chat_history
+            });
+            yield* await streamLlmResponse(llmPromise);
+            return;
+        }
+
+        if (subjectDocs.length > 1) {
+            const llmPromise = responseChain.invoke({
+                situation: 'AMBIGUOUS_SUBJECT',
+                parameters: { subjectInput: subject, matchedSubjects: subjectDocs.map(s => s.name) },
+                user_Language: userVersion,
+                chat_history
+            });
+            yield* await streamLlmResponse(llmPromise);
+            return;
+        }
+
+        const subjectDoc = subjectDocs[0];
+        const canonicalSubjectName = subjectDoc.name;
+
+        // --- Step 3: Check for and Validate Question Count ---
+        const maxQuestions = subjectDoc.group === 'science' ? 8 : 11;
+        
+        if (!question_count) {
+            logger.info('[Exam Tool] Missing question_count. Asking user and providing button.');
+            
+            // ===== MODIFICATION START: ADDING CONTEXTUAL BUTTON =====
+            // We get the full response instead of streaming it.
+            const responseText = await responseChain.invoke({
+                situation: 'MISSING_QUESTION_COUNT',
+                parameters: { maxQuestions: maxQuestions, subject: canonicalSubjectName, chapter: chapter }, // Added chapter for more context
+                user_Language: userVersion,
+                chat_history
+            });
+
+            // The payload should be the full command the user would have typed.
+            const buttonPayload = `Create a ${exam_type} exam on ${canonicalSubjectName} ${chapter} with ${maxQuestions} questions`;
+
+            // Yield a single object with both text and the button data.
+            yield {
+                text: responseText,
+                buttons: [{
+                    label: `Okay, create with ${maxQuestions} questions`,
+                    payload: buttonPayload
+                }]
+            };
+            // ===== MODIFICATION END =====
+            return;
+        }
+
+        const requestedCount = parseInt(question_count, 10);
+        if (isNaN(requestedCount) || requestedCount <= 0 || requestedCount > maxQuestions) {
+            logger.warn(`[Exam Tool] Invalid question_count: ${question_count}. Max allowed: ${maxQuestions}`);
+            const llmPromise = responseChain.invoke({
+                situation: 'INVALID_QUESTION_COUNT',
+                parameters: {
+                    requestedCount: question_count,
+                    maxQuestions: maxQuestions,
+                    subject: canonicalSubjectName
+                },
+                user_Language: userVersion,
+                chat_history
+            });
+            yield* await streamLlmResponse(llmPromise);
+            return;
+        }
+
+        // --- Step 4: Validate Chapter (and handle ambiguity) ---
+        const chapterRegex = new RegExp(chapter.trim(), 'i');
+        const matchedChapters = subjectDoc.chapters.filter(chap => {
+            if (chapterRegex.test(chap.name)) return true;
+            if (chap.aliases) {
+                if (chap.aliases.english && chap.aliases.english.some(alias => chapterRegex.test(alias))) return true;
+                if (chap.aliases.bangla && chap.aliases.bangla.some(alias => chapterRegex.test(alias))) return true;
+                if (chap.aliases.banglish && chap.aliases.banglish.some(alias => chapterRegex.test(alias))) return true;
+            }
+            return false;
+        });
+
+        if (matchedChapters.length === 0) {
+            const llmPromise = responseChain.invoke({
+                situation: 'CHAPTER_NOT_FOUND',
+                parameters: { subject: canonicalSubjectName, chapterInput: chapter, availableChapters: subjectDoc.chapters.map(c => c.name) },
+                user_Language: userVersion,
+                chat_history
+            });
+            yield* await streamLlmResponse(llmPromise);
+            return;
+        }
+
+        if (matchedChapters.length > 1) {
+            const llmPromise = responseChain.invoke({
+                situation: 'AMBIGUOUS_CHAPTER',
+                parameters: { subject: canonicalSubjectName, chapterInput: chapter, matchedChapters: matchedChapters.map(c => c.name) },
+                user_Language: userVersion,
+                chat_history
+            });
+            yield* await streamLlmResponse(llmPromise);
+            return;
+        }
+
+        const matchedChapter = matchedChapters[0];
+        const canonicalChapterName = matchedChapter.name;
+        
+        // --- Step 5: DECISIVE ACTION ---
+        const workingResponse = await responseChain.invoke({
+            situation: 'VALIDATION_SUCCESS_PROCEEDING',
+            parameters: { exam_type, subject: canonicalSubjectName, chapter: canonicalChapterName },
+            user_Language: userVersion,
+            chat_history
+        });
+        
+        yield { text: workingResponse };
+
+        // --- Step 6: Create the Exam from the Database ---
+        if (source === 'database') {
+            if (exam_type === 'CQ') {
+                logger.info("CREATING CQ EXAM");
+                const queryVersion = userVersion.charAt(0).toUpperCase() + userVersion.slice(1);
+                
+                const allPossibleChapterNames = [
+                    matchedChapter.name,
+                    ...(matchedChapter.aliases?.english || []),
+                    ...(matchedChapter.aliases?.bangla || []),
+                    ...(matchedChapter.aliases?.banglish || []),
+                ];
+
+                logger.info(`[Exam Tool] Querying for Subject ID: ${subjectDoc._id}, Chapter Names: [${allPossibleChapterNames.join(', ')}], Version: ${queryVersion}`);
+
+                const questions = await CreativeQuestion.aggregate([
+                    {
+                        $match: {
+                            'version': queryVersion,
+                            'subject': subjectDoc._id,
+                            $or: [
+                                { 'chapter.englishName': { $in: allPossibleChapterNames } },
+                                { 'chapter.banglaName': { $in: allPossibleChapterNames } }
+                            ]
+                        }
+                    },
+                    { $sample: { size: requestedCount } }
+                ]);
+
+                logger.info(`[Exam Tool] Found ${questions.length} questions matching criteria.`);
+                
+                if (questions.length === 0) {
+                    logger.warn("NO_QUESTIONS_FOUND");
+                    const llmPromise = responseChain.invoke({
+                        situation: 'NO_QUESTIONS_FOUND',
+                        parameters: { subject: canonicalSubjectName, chapter: canonicalChapterName, exam_type },
+                        user_Language: userVersion,
+                        chat_history
+                    });
+                    yield* await streamLlmResponse(llmPromise);
+                    return;
+                }
+                
+                if (questions.length < requestedCount) {
+                    logger.warn("INSUFFICIENT_QUESTIONS_FOUND");
+                    const llmPromise = responseChain.invoke({
+                        situation: 'INSUFFICIENT_QUESTIONS_FOUND',
+                        parameters: { subject: canonicalSubjectName, chapter: canonicalChapterName, requestedCount: requestedCount, foundCount: questions.length },
+                        user_Language: userVersion,
+                        chat_history
+                    });
+                    yield* await streamLlmResponse(llmPromise);
+                }
+                
+                const timeLimitInMinutes = calculateExamTime(exam_type, questions.length);
+
+                const examData = {
+                    questions: questions.map(q => q._id),
+                    creator: userId.userId.toString(),
+                    isActive: true,
+                    title: `CQ Exam: ${canonicalSubjectName} - ${canonicalChapterName}`,
+                    duration: timeLimitInMinutes,
+                    source: source,
+                    subject: {
+                        code: subjectDoc.subjectCode,
+                    },
+                    chapters: [
+                        {
+                            index: matchedChapter.index,
+                        }
+                    ]
+                };
+
+                const newExam = new CqExam(examData);
+                const savedExam = await newExam.save();
+                logger.info(`[Exam Tool] CQ Exam created successfully with ID: ${savedExam._id}`);
+                
+                const examId = savedExam._id.toString();
+
+                // ===== MODIFICATION START: ADDING STATIC NAVLINK BUTTON ON SUCCESS =====
+                const successText = await responseChain.invoke({
+                    situation: 'EXAM_CREATED_SUCCESS',
+                    parameters: {
+                        exam_type,
+                        question_count: questions.length,
+                        subject: canonicalSubjectName,
+                        chapter: canonicalChapterName,
+                        timeLimit: timeLimitInMinutes,
+                        examId: examId
+                    },
+                    user_Language: userVersion,
+                    chat_history
+                });
+
+                // This payload is a URL path for client-side navigation.
+                // The frontend should check for `type: 'link'` and render a NavLink.
+                yield {
+                    text: successText,
+                    buttons: [
+                        {
+                            label: 'Start Exam',
+                            payload: `/exam/${examId}`,
+                            type: 'link'
+                        }
+                    ]
+                };
+                // ===== MODIFICATION END =====
+                return;
+
+            } else {
+                yield { text: `Support for ${exam_type} exams is not fully implemented yet.` };
+                return;
+            }
+        } else {
+            logger.warn("AI_GENERATION_UNAVAILABLE");
+            const llmPromise = responseChain.invoke({
+                situation: 'AI_GENERATION_UNAVAILABLE',
+                parameters: {},
+                user_Language: userVersion,
+                chat_history
+            });
+            yield* await streamLlmResponse(llmPromise);
+        }
+    } catch (error) {
+        logger.error('[Exam Tool] Error creating exam:', error);
+        yield { text: "I'm sorry, I ran into an unexpected problem. My developers have been notified." };
+    }
 };
 
 export const examTool = {
-  handleCreateExam,
+    handleCreateExam,
 };

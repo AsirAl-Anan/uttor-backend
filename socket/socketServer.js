@@ -1,8 +1,7 @@
 import { Server } from "socket.io";
 import logger from "../utils/logger.js";
-import * as authService  from "../services/auth.service.js"; // Corrected import
-// import { ragService } from "../services/rag.service.js"; // REMOVED
-import { intentService } from "../services/intent.service.js"; // ADDED
+import * as authService  from "../services/auth.service.js";
+import { intentService } from "../services/intent.service.js";
 import { chatMemoryService } from "../services/chatMemory.service.js";
 import { authenticateSocket } from "../middlewares/auth.js";
 import { sessionMiddleware } from "../app.js";
@@ -20,7 +19,6 @@ export const initializeSocketServer = (httpServer) => {
   const wrap = (middleware) => (socket, next) =>
     middleware(socket.request, {}, next);
 
-  // Session + Passport
   io.use(wrap(sessionMiddleware));
   io.use(wrap(passport.initialize()));
   io.use(wrap(passport.session()));
@@ -33,7 +31,7 @@ export const initializeSocketServer = (httpServer) => {
       socket.join(chatId);
       logger.info(`Socket ${socket.id} joined chat room: ${chatId}`);
     });
-    
+      
     socket.on("chat_message", async (data) => {
       let { chatId, content } = data; 
 
@@ -44,6 +42,7 @@ export const initializeSocketServer = (httpServer) => {
       
       try {
         if (!chatId) {
+          console.log("inside generatin chat name")
           const newChat = await chatMemoryService.createNewChat({ userId: socket.user.userId, query:content.text });
           chatId = newChat._id.toString(); 
           socket.emit("chat_session_created", { chatId: chatId });
@@ -57,7 +56,6 @@ export const initializeSocketServer = (httpServer) => {
           content,
         });
 
-        // 2. Start the INTENT pipeline (this is the key change)
         const stream = await intentService.generateResponseStream({
           query: content.text,
           chatId,
@@ -65,16 +63,30 @@ export const initializeSocketServer = (httpServer) => {
         });
 
         let fullResponse = "";
-        // 3. Stream the response back to the client (no changes here)
+        
+        // ===== MODIFICATION START: UPDATED STREAM HANDLING LOGIC =====
         for await (const chunk of stream) {
-            const text = chunk?.text || ""; 
-            if (text) {
-                socket.emit("chat_token", { chatId, token: text });
-                fullResponse += text;
+            // Check if the chunk is the special object with buttons
+            if (chunk && chunk.buttons && Array.isArray(chunk.buttons)) {
+                // It's a structured response. Emit the new event.
+                // The payload is the entire chunk object { text: "...", buttons: [...] }
+                socket.emit("structured_response", { chatId, ...chunk });
+                
+                // Still add the text part to the full response for saving to DB
+                if (chunk.text) {
+                    fullResponse += chunk.text;
+                }
+            } else {
+                // It's a regular text token for streaming
+                const text = chunk?.text || ""; 
+                if (text) {
+                    socket.emit("chat_token", { chatId, token: text });
+                    fullResponse += text;
+                }
             }
         }
+        // ===== MODIFICATION END =====
         
-        // 4. Save the full AI response to the database
         if (fullResponse) {
           await chatMemoryService.saveMessage({
             chatId,

@@ -37,58 +37,52 @@ const parser = StructuredOutputParser.fromZodSchema(intentSchema);
 
 // --- MODIFICATION START: RESTRUCTURE THE PROMPT FOR CONTEXT ---
 
-const system_template = `You are an expert AI assistant responsible for classifying user intents and extracting relevant parameters.
-Your goal is to understand what the user wants to do and provide the necessary information in a structured JSON format.
+const system_template = `You are a strict JSON output bot. Your ONLY function is to analyze the user's query and the chat history to classify an intent and extract a COMPLETE set of parameters into a JSON object. YOU MUST NOT generate any other text. Your entire output must be a single, valid JSON object.
 
-**Crucially, you must consider the previous chat history to understand the full context.** If the user's current query seems incomplete, it is likely an answer to your previous question. Use the history to maintain the original intent and fill in missing parameters.
+**CORE DIRECTIVE: CONTEXT MERGING**
+Your most important task is to maintain the state of the conversation. The user provides information piece by piece. You must combine information from the current query with information already established in the chat history.
 
-For example, if the history shows the user first asked to "create a cq exam" and their new message is "physics", you must recognize that the intent is still "create_exam" and you have now received the "subject" parameter.
+**RULES:**
+1.  **Carry Forward Old Parameters:** If parameters like 'subject', 'chapter', or 'exam_type' were established in previous messages, you MUST carry them forward into the JSON output for the current query.
+2.  **Integrate New Parameters:** The new user query might only provide one piece of missing information (e.g., "8" for 'question_count'). Your job is to combine this new piece with ALL the old pieces from the history.
+3.  **Extract Verbatim:** When extracting a value for a parameter (e.g., 'subject'), you MUST use the user's exact wording. If they say "physics first paper", the parameter value must be "physics first paper", NOT "Physics". This is critical.
 
-Based on the user's query AND the conversation history, classify the query into one of the following intents:
-- **search_question**: The user is looking for a specific question or type of question.
-- **understand**: The user wants an explanation of a concept, topic, or theory.
-- **solve_question**: The user wants a step-by-step solution to a problem.
-- **create_exam**: The user wants to generate an exam. Use the history to gather all parameters like exam type, subject, chapter, etc., over multiple messages. Note that 'cq' should be mapped to 'CQ' and 'mcq' to 'MCQ'.
-- **unknown**: If the intent is genuinely unclear even with history, use this.`;
+**EXAMPLE OF CONTEXT MERGING:**
+- **Chat History:**
+    - User: "create a cq exam on physics first paper newtonian mechanics"
+    - AI: "How many questions would you like?"
+- **Current User Query:** "8"
+- **Your CORRECT Output:**
+  \`\`\`json
+  {{
+    "intent": "create_exam",
+    "parameters": {{
+      "exam_type": "CQ",
+      "subject": "physics first paper",
+      "chapter": "newtonian mechanics",
+      "question_count": 8
+    }}
+  }}
+  \`\`\`
+  Notice how 'exam_type', 'subject', and 'chapter' were carried forward from the history and merged with the new 'question_count'.
+
+**INTENT DEFINITIONS:**
+- **create_exam**: The user's goal is to generate an exam. This is the correct intent even when they are just providing a piece of information like the subject or question count in an ongoing conversation about creating an exam.
+- **search_question**: ...
+- **understand**: ...
+- **solve_question**: ...
+- **unknown**: Use ONLY if it is impossible to map the query to any other intent.`;
 
 const human_template = `
-Here are some examples of how to respond:
-
-User Query: "create a cq exam"
-Your Output:
-\`\`\`json
-{{
-  "intent": "create_exam",
-  "parameters": {{
-    "exam_type": "CQ"
-  }}
-}}
-\`\`\`
-
-User Query: "newtonian mechanics and physics 1st paper" 
-(PREVIOUS HISTORY: AI asked for subject and chapter for a CQ exam)
-Your Output:
-\`\`\`json
-{{
-  "intent": "create_exam",
-  "parameters": {{
-    "subject": "physics 1st paper",
-    "chapter": "newtonian mechanics"
-  }}
-}}
-\`\`\`
-
----
 {format_instructions}
 
----
-PREVIOUS CHAT HISTORY:
+**PREVIOUS CHAT HISTORY:**
 (The history is provided in the message sequence)
 
 ---
-Now, process the following query given the history.
+Now, process the following query based on the history and the rules provided.
 
-User Query:
+**User Query:**
 {query}
 `;
 
@@ -97,7 +91,6 @@ const prompt = ChatPromptTemplate.fromMessages([
   new MessagesPlaceholder("chat_history"),
   HumanMessagePromptTemplate.fromTemplate(human_template),
 ]);
-
 
 /**
  * The main intent classification chain.
@@ -108,11 +101,10 @@ const prompt = ChatPromptTemplate.fromMessages([
 export const intentChain = RunnableSequence.from([
   {
     query: (input) => input.query,
-    chat_history: (input) => input.chat_history, // Pass history to the prompt
+    chat_history: (input) => input.chat_history, 
     format_instructions: () => parser.getFormatInstructions(),
   },
   prompt,
   llmNonStreaming,
   parser,
 ]);
-// --- MODIFICATION END ---
