@@ -19,11 +19,17 @@ const messageSchema = new mongoose.Schema(
         type: String,
         required: true,
      },
-        image: {
-        type: String, 
-        }
+        images: {
+          type: [String],
+          default: [],
+        },
+         audio:{
+      type: String,
+      default: null
+    }  
     },
-  },
+   
+    },
   { timestamps: true }
 );
 

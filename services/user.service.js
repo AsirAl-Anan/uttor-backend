@@ -56,8 +56,10 @@ export const getChatById = async (userId, chatId) => {
   const chat= await Chat.findOne({ _id: chatId, user: userId });
   const messagesId = chat ? chat.messages : [];
   const messages = await Message.find({ _id: { $in: messagesId } }).sort({ createdAt: 1 });
+  console.log(messages);
   if (chat) {
     chat.messages = messages;
+    
   }
   return chat;
   // return messages;
@@ -148,10 +150,12 @@ export const finishExamAttempt = async (examId, userId) => {
         },
         { 
             $set: { 
+                isActive: false,
                 'attempts.$[elem].status': 'completed',
                 'attempts.$[elem].endTime': new Date(),
             }
         },
+       
         { 
             arrayFilters: [{ 'elem.userId': userId.toString() }],
             new: true // return the updated document

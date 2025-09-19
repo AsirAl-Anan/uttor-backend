@@ -1,3 +1,5 @@
+// backend/src/app.js
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -7,31 +9,52 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import passport from './config/passport.js';
 import authRoutes from './routes/auth.routes.js';
-import userRoutes from './routes/user.routes.js'; // NEW
+import userRoutes from './routes/user.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
+
+// ===== MODIFICATION START: Import path and fs for file handling =====
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+// ===== MODIFICATION END =====
 
 const app = express();
 app.set('trust proxy', 1);
-// Security middleware
 app.use(helmet());
 
-// CORS configuration
 app.use(cors({
   origin:[ process.env.FRONTEND_URL ,'http://localhost:8080' , 'https://preview--wisdom-spark-ai.lovable.app', process.env.PRODUCTION_CLIENT_URL],
   credentials: true
 }));
 
-// Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Cookie parser
 app.use(cookieParser());
+
+// ===== MODIFICATION START: Setup static file serving for /uploads =====
+// Get the directory name of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Define the path to the uploads directory
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+
+// Ensure the uploads directory exists, create it if it doesn't
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log(`Created uploads directory at: ${uploadsDir}`);
+}
+
+// Serve files from the 'uploads' directory statically
+app.use('/uploads', express.static(uploadsDir));
+// ===== MODIFICATION END =====
+
+
 export const sessionMiddleware = session({
   name: "session",
   secret: process.env.SESSION_SECRET,
@@ -43,30 +66,25 @@ export const sessionMiddleware = session({
     ttl: 14 * 24 * 60 * 60
   }),
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // must be true for HTTPS
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // cross-site in production
+    maxAge: 1000 * 60 * 60 * 24 * 7,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   }
 });
 
-// Session configuration
 app.use(sessionMiddleware);
 
-// Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes); // NEW
+app.use('/api/user', userRoutes);
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Error handling
 app.use(notFound);
 app.use(errorHandler);
 
