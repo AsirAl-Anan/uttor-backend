@@ -1,4 +1,4 @@
-//user controller
+// user.controller.js
 import { Chat } from '../models/chat.model.js';
 import { 
   updateUserProfile, 
@@ -8,6 +8,7 @@ import {
 } from '../services/profile.service.js';
 import { successResponse, errorResponse } from '../utils/response.js';
 import { getChatById, getCqExam, getExamAndAttempt, startExamAttempt, finishExamAttempt } from '../services/user.service.js';
+import { AnswerEvaluation, CqResult } from '../models/cq.result.model.js';
 // Get current user profile
 export const getProfile = async (req, res) => {
   try {
@@ -172,4 +173,28 @@ export const finishCqExamController = async (req, res) => {
         console.log(error);
         return errorResponse(res, 400, error.message || 'Failed to finish exam');
     }
+};
+// user.controller.js
+
+// ... (keep all existing imports and functions)
+import { 
+  // ... other imported services
+  getExamHistory // <-- Add this new import
+} from '../services/user.service.js';
+
+// ... (keep all existing controller functions: getProfile, updateProfile, etc.)
+
+// --- NEW CONTROLLER FUNCTION ---
+/**
+ * Controller to get the user's entire exam history.
+ */
+export const getExamHistoryController = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const history = await getExamHistory(userId);
+    return successResponse(res, 200, 'Exam history fetched successfully', history);
+  } catch (error) {
+    console.error(error);
+    return errorResponse(res, 500, 'Failed to fetch exam history', error.message);
+  }
 };

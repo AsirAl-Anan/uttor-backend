@@ -10,6 +10,7 @@ import morgan from 'morgan';
 import passport from './config/passport.js';
 import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
+import examRoutes from './routes/exam.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 
 // ===== MODIFICATION START: Import path and fs for file handling =====
@@ -80,7 +81,7 @@ app.use(passport.session());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
-
+app.use('/api/exams', examRoutes)
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });

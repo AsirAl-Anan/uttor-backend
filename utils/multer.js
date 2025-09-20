@@ -2,6 +2,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { uploadImage } from './cloudinary.js';
+
 // Storage configuration using existing uploads directory
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -17,7 +18,6 @@ const storage = multer.diskStorage({
     } else {
       uploadPath += 'others/';
     }
-
 
     // Create subdirectory if it doesn't exist
     if (!fs.existsSync(uploadPath)) {
@@ -67,6 +67,16 @@ const upload = multer({
   }
 });
 
+// High capacity multer configuration for any files
+const uploadAny = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+    files: 80 // Maximum 80 files
+  }
+});
+
 // Memory storage for temporary file handling
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
@@ -76,6 +86,7 @@ const memoryUpload = multer({
     files: 3
   }
 });
+
 // Specific configurations for different use cases
 const configurations = {
    
@@ -88,22 +99,14 @@ const configurations = {
   // Multiple files with different field names
   fields: upload.fields([
     { name: 'image', maxCount: 2 },
-    { name: 'qb', maxCount: 6 },
-   { name: 'ai', maxCount: 3 }, // use this
-   { name: 'stemImage', maxCount: 1 },
-
-    { name: 'cAnswerImage', maxCount: 1 },
-  
-
-    { name: 'dAnswerImage', maxCount: 1 },
-
-    
+    { name: 'ai', maxCount: 3 }, 
+    { name: 'evaluate', maxCount: 10 }, 
     { name: 'documents', maxCount: 8 },
-   { name: 'topic', maxCount: 6 }
+    { name: 'topic', maxCount: 6 }
   ]),
   
-  // Any files
-  any: upload.any(),
+  // Any files with high limit (80 files)
+  any: uploadAny.any(),
   
   // Memory storage
   memory: memoryUpload.single('file'),
@@ -146,6 +149,7 @@ const handleMulterError = (err, req, res, next) => {
 
 export {
   upload,
+  uploadAny,
   memoryUpload,
   configurations,
   handleMulterError,

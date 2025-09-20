@@ -42,9 +42,8 @@ function setupErrorHandling() {
 async function uploadImage(file, options = {}) {
   try {
     const {
-      folder = '',
-      quality = 'auto:best',
-      // ... other options
+      folder = 'uncategorized', // Good practice to have a default folder
+      quality = 'auto:good',
     } = options;
 
     let fileInput;
@@ -56,7 +55,7 @@ async function uploadImage(file, options = {}) {
                 (error, result) => {
                     if (error) {
                         console.error('❌ Cloudinary stream upload error:', error);
-                        return reject({ success: false, error: error.message });
+                        return reject({ success: false, error: error.message || 'Stream upload failed' });
                     }
                     resolve({
                         success: true,
@@ -66,8 +65,6 @@ async function uploadImage(file, options = {}) {
                             width: result.width,
                             height: result.height,
                             format: result.format,
-                            size: result.bytes,
-                            createdAt: result.created_at,
                         },
                     });
                 }
@@ -77,12 +74,8 @@ async function uploadImage(file, options = {}) {
     } 
     else if (typeof file === 'string') {
       fileInput = file; // Local file path
-    } else if (file?.buffer) { // For files from multer (has mimetype and buffer)
-      fileInput = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
-    } else if (file?.path) {
-      fileInput = file.path; // Multer disk storage
     } else {
-      throw new Error('Invalid file input. Expected file path, buffer, or multer file object.');
+      throw new Error('Invalid file input for upload. Expected file path or buffer.');
     }
 
     const result = await cloudinary.uploader.upload(fileInput, { folder, quality, resource_type: 'image' });
@@ -95,19 +88,19 @@ async function uploadImage(file, options = {}) {
         width: result.width,
         height: result.height,
         format: result.format,
-        size: result.bytes,
-        createdAt: result.created_at,
       },
     };
 
   } catch (error) {
-    if (error.success === false) return error;
-    
-    console.error('❌ Cloudinary upload error:', error);
+    // ======================= THE SECONDARY FIX IS HERE =======================
+    // Make error handling more robust to prevent 'undefined' messages.
+    console.error('❌ Cloudinary upload error object:', error); // Log the full error
+    const errorMessage = error.message || 'An unknown Cloudinary error occurred.';
     return {
       success: false,
-      error: error.message,
+      error: errorMessage,
     };
+    // =========================================================================
   }
 }
 

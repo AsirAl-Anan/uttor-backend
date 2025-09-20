@@ -1,6 +1,54 @@
-import {userDb} from "../config/db.js";
+import { academicDb } from "../config/db.js";
 import mongoose from "mongoose";
 
+const mcqSchema = new mongoose.Schema({
+    questionText: {
+        type: String,
+        required: true
+    },
+    questionImages: [
+        {
+            image: {
+                type: String,
+                required: true
+            },
+            caption: {
+                type: String,
+                default: ''
+            }
+        }
+    ],
+    options: [
+        {
+            optionText: {
+                type: String,
+                required: true
+            },
+            isCorrect: {
+                type: Boolean,
+                required: true,
+                default: false
+            },
+            optionImage: { // Optional: for options with diagrams
+                type: String,
+                default: null
+            },
+            optionIdentifier: {
+                type: String,
+                required: true,
+                enum: ['a', 'b', 'c', 'd', 'e','f', 'g', 'h', 'i', 'j']
+            }
+        }
+    ],
+    explanation: { // Optional: explanation for user
+        type: String,
+        default: ''
+    },
+    marks: {
+        type: Number,
+        default: 1
+    }
+});
 
 const mcqExamSchema = new mongoose.Schema({
     title: {
@@ -12,28 +60,27 @@ const mcqExamSchema = new mongoose.Schema({
         type: String,
         trim: true,
     },
-    // Metadata specific to Bangladeshi context
     level: {
         type: String,
         enum: ['SSC', 'HSC'],
         required: true,
     },
     subject: {
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Subject",
         required: true,
-        trim: true,
+        
     },
-    chapter: {
-        type: String,
+    chapterIndex: {
+        type: Number,
         required: true,
-        trim: true,
     },
+   
     board: {
         type: String,
         enum: ['All', 'Dhaka', 'Rajshahi', 'Cumilla', 'Jashore', 'Chattogram', 'Barishal', 'Sylhet', 'Dinajpur', 'Mymensingh', 'Technical', 'Madrassah'],
         default: 'All'
     },
-    // Exam rules
     totalMarks: {
         type: Number,
         required: true,
@@ -42,76 +89,32 @@ const mcqExamSchema = new mongoose.Schema({
         type: Number,
         required: [true, "Time limit is required"],
     },
-    // The core of the exam
-    questions: [
-        {
-            questionText: {
-                type: String,
-                required: true
-            },
-            questionImage: { // Optional: for questions with diagrams (Physics, Biology)
-                type: String, 
-                default: null
-            },
-            options: [
-                {
-                    optionText: {
-                        type: String,
-                        required: true
-                    },
-                    isCorrect: {
-                        type: Boolean,
-                        required: true,
-                        default: false
-                    },
-                    optionImage: { // Optional: for options with diagrams (Physics, Biology)
-                        type: String, 
-                        default: null
-                    },
-                    optionIdentifier:{
-                        type: String,
-                        required: true,
-                        enum: ['a', 'b', 'c', 'd', 'e','f', 'g', 'h', 'i', 'j']
-                    }
-                }
-            ],
-            explanation: { // Optional: To show the user after they complete the exam
-                type: String,
-                default: ''
-            },
-            marks: {
-                type: Number,
-                default: 1
-            }
-        }
-    ],
-    creator: { // The teacher/admin who created the exam
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-        required: true,
+    questions: [mcqSchema], // ✅ embed mcqSchema here
+    creator: {
+     type: String,
+     required: true,
     },
-    isActive: { // To control if students can take this exam
+    isActive: {
         type: Boolean,
         default: true,
     }
 }, {
-    timestamps: true // Adds createdAt and updatedAt automatically
+    timestamps: true
 });
 
-
-// To ensure each question has exactly one correct answer (optional but good practice)
-mcqExamSchema.path('questions').validate(function(questions) {
+// ✅ Validation: ensure exactly one correct option
+mcqExamSchema.path('questions').validate(function (questions) {
     if (!questions) return false;
     for (const question of questions) {
         const correctOptions = question.options.filter(opt => opt.isCorrect);
         if (correctOptions.length !== 1) {
-            return false; // Validation fails if there is not exactly one correct option
+            return false;
         }
     }
     return true;
 }, 'Each question must have exactly one correct answer.');
+export const MCQ = academicDb.model("MCQ", mcqSchema);
 
-
-const McqExam = userDb.model("McqExam", mcqExamSchema);
+const McqExam = academicDb.model("McqExam", mcqExamSchema);
 
 export default McqExam;

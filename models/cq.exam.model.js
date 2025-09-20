@@ -21,6 +21,10 @@ const attemptSchema = new mongoose.Schema({
 }, { _id: false }); // _id is not needed for subdocuments here
 
 const cqExamSchema = new mongoose.Schema({
+    isEvaluated:{
+        type: Boolean,
+        default: false,
+    },
     questions: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: "CreativeQuestion",
@@ -48,8 +52,18 @@ const cqExamSchema = new mongoose.Schema({
         required: true,
         enum: ["database", "ai"]
     },
+    chapter: { //new
+        index:{
+            type: Number,
+            required: true,
+        },
+        name: { type: String, required: true },
+
+    },
     subject: {
         code: { type: Number, required: true },
+        id: { type: mongoose.Schema.Types.ObjectId, ref: "Subject", required: true }, //new
+
     },
     // Add the attempts array here
     attempts: [attemptSchema]

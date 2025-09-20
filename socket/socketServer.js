@@ -7,7 +7,6 @@ import { chatMemoryService } from "../services/chatMemory.service.js";
 import { authenticateSocket } from "../middlewares/auth.js";
 import { sessionMiddleware } from "../app.js";
 import passport from "../config/passport.js";
-// MODIFICATION: Import uploadSound in addition to uploadImage
 import { uploadImage, uploadSound } from "../utils/cloudinary.js";
 
 export const initializeSocketServer = (httpServer) => {
@@ -17,7 +16,7 @@ export const initializeSocketServer = (httpServer) => {
       methods: ["GET", "POST"],
       credentials: true
     },
-    maxHttpBufferSize: 5e6 
+    maxHttpBufferSize: 25e6 // Increased buffer size for up to 5 images (5MB each)
   });
 
   const wrap = (middleware) => (socket, next) =>
@@ -39,7 +38,8 @@ export const initializeSocketServer = (httpServer) => {
     socket.on("chat_message", async (data) => {
       let { chatId, content } = data; 
 
-      if (!content || (!content.text?.trim() && !content.image)) {
+      // Check if content exists and has either text or images
+      if (!content || (!content.text?.trim() && (!content.images || content.images.length === 0))) {
         socket.emit("chat_error", { message: "Invalid message payload. Content is empty." });
         return;
       }
@@ -55,33 +55,45 @@ export const initializeSocketServer = (httpServer) => {
           logger.info(`Socket ${socket.id} auto-joined new chat room: ${chatId}`);
         }
 
-        let imageUrls = [];
-        if (content.image && Buffer.isBuffer(content.image)) {
-            logger.info(`Received image for chat ${chatId}. Uploading to Cloudinary...`);
-            const uploadResult = await uploadImage(content.image);
+        // ==================== MODIFICATION START ====================
+        // This block is updated to handle an array of images.
 
-            if (uploadResult.success && uploadResult.data.url) {
-                imageUrls.push(uploadResult.data.url);
-                logger.info(`Image uploaded successfully: ${uploadResult.data.url}`);
-            } else {
-                logger.error(`Cloudinary upload failed: ${uploadResult.error}`);
-                socket.emit("chat_error", { message: "Sorry, I couldn't process your image. Please try again." });
-                return;
+        let imageUrls = [];
+        // Check for the 'images' property, ensure it's an array, and it's not empty.
+        if (content.images && Array.isArray(content.images) && content.images.length > 0) {
+            logger.info(`Received ${content.images.length} image(s) for chat ${chatId}. Uploading to Cloudinary...`);
+            
+            // Loop through each image buffer sent from the client
+            for (const imageBuffer of content.images) {
+                if (Buffer.isBuffer(imageBuffer)) {
+                    const uploadResult = await uploadImage(imageBuffer);
+
+                    if (uploadResult.success && uploadResult.data.url) {
+                        imageUrls.push(uploadResult.data.url);
+                        logger.info(`Image uploaded successfully: ${uploadResult.data.url}`);
+                    } else {
+                        logger.error(`A Cloudinary upload failed: ${uploadResult.error}`);
+                        // Optionally, inform the user about the specific failure and stop.
+                        socket.emit("chat_error", { message: "Sorry, I couldn't process one of your images. Please try again." });
+                        return; // Stop processing if any image fails
+                    }
+                }
             }
         }
+        // ===================== MODIFICATION END =====================
 
         await chatMemoryService.saveMessage({
           chatId,
           sender: 'user',
           content: {
             text: content.text || "",
-            images: imageUrls,
+            images: imageUrls, // Save the array of URLs
           },
         });
 
         const stream = await intentService.generateResponseStream({
           query: content.text,
-          images: imageUrls,
+          images: imageUrls, // Pass the array of URLs to the service
           chatId,
           userId: socket?.user
         });
@@ -90,7 +102,6 @@ export const initializeSocketServer = (httpServer) => {
         let audioMessageHandled = false;
 
         for await (const chunk of stream) {
-            // ===== MODIFICATION START: Handle new audio chunk type =====
             if (chunk && chunk.type === 'audio' && Buffer.isBuffer(chunk.audio)) {
                 logger.info(`Received audio buffer for chat ${chatId}. Uploading to Cloudinary...`);
                 const uploadResult = await uploadSound(chunk.audio, { folder: 'voice-messages' });
@@ -98,26 +109,22 @@ export const initializeSocketServer = (httpServer) => {
                 if (uploadResult.success && uploadResult.data.url) {
                     const audioUrl = uploadResult.data.url;
                     logger.info(`Voice message uploaded to Cloudinary: ${audioUrl}`);
-
-                    // Save the AI's message with the audio URL to the database
+                    
                     await chatMemoryService.saveMessage({
                         chatId,
                         sender: 'ai',
-                        content: { text: "Here is the voice message you requested.",  audio: audioUrl, } // Placeholder text for chat history
-                       
+                        content: { text: "Here is the voice message you requested.",  audio: audioUrl, }
                     });
 
-                    // Emit a new event specifically for the audio message
                     socket.emit("audio_message", { chatId, audio: audioUrl });
                     audioMessageHandled = true;
-                    break; // Audio is a complete response, so we exit the stream loop.
+                    break; 
 
                 } else {
                     logger.error(`Cloudinary audio upload failed: ${uploadResult.error}`);
                     socket.emit("chat_error", { message: "Sorry, I couldn't generate the voice message." });
                 }
 
-            // ===== MODIFICATION END =====
             } else if (chunk && chunk.buttons && Array.isArray(chunk.buttons)) {
                 socket.emit("structured_response", { chatId, ...chunk });
                 if (chunk.text) {
@@ -132,7 +139,6 @@ export const initializeSocketServer = (httpServer) => {
             }
         }
         
-        // Save the full text response ONLY if it's a regular text chat (not an audio one)
         if (fullResponse && !audioMessageHandled) {
           await chatMemoryService.saveMessage({
             chatId,

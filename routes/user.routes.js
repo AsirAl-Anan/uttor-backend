@@ -13,6 +13,8 @@ import {
 } from '../controllers/user.controller.js';
 import { authenticateJWT ,authenTicateSession} from '../middlewares/auth.js';
 import { validateProfileUpdate } from '../middlewares/validation.js';
+import { getAllExamReport } from '../services/report.service.js';
+import { getExamHistoryController } from '../controllers/user.controller.js';
 
 const router = express.Router();
 
@@ -35,4 +37,8 @@ router.get('/exam/cq/:examId', getCqExamStateController)
 router.post('/exam/cq/:examId/start',  startCqExamController);
 router.post('/exam/cq/:examId/finish',  finishCqExamController);
 
+router.get('/exams/history', getExamHistoryController);
+
+//report 
+router.get('/report', getAllExamReport)
 export default router;

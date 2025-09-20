@@ -77,6 +77,65 @@ export const llm = new RunnableLambda({
   func: (input) => invokeGoogleSdkForStreaming(input.messages),
 });
 
+/**
+ * This is the non-streaming equivalent of the `invokeGoogleSdkForStreaming` function.
+ * It waits for the full response from the model instead of yielding chunks.
+ *
+ * @param {Array<AIMessage | HumanMessage>} messages - The array of messages from a LangChain prompt.
+ * @returns {Promise<string>} A promise that resolves to the complete text response from the AI model.
+ */
+async function invokeGoogleSdkForNonStreaming(messages) {
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+  const latestMessage = messages.pop();
+  const history = messages.map(msg => ({
+    role: msg instanceof AIMessage ? 'model' : 'user',
+    parts: [{ text: msg.content }],
+  }));
+
+  const userParts = [];
+  if (Array.isArray(latestMessage.content)) {
+    for (const part of latestMessage.content) {
+      if (part.type === 'text') {
+        userParts.push({ text: part.text });
+      } else if (part.type === 'image_url') {
+        const imageDataURI = typeof part.image_url === 'string'
+          ? part.image_url
+          : part.image_url?.url;
+
+        if (imageDataURI) {
+          const [header, base64Data] = imageDataURI.split(',');
+          const match = header ? header.match(/:(.*?);/) : null;
+          
+          if (match && match[1] && base64Data) {
+            const mimeType = match[1];
+            userParts.push({
+              inlineData: { mimeType, data: base64Data },
+            });
+          }
+        }
+      }
+    }
+  } else {
+    userParts.push({ text: latestMessage.content });
+  }
+
+  const chat = model.startChat({ history });
+  const result = await chat.sendMessage(userParts);
+  const response = result.response;
+  const text = response.text();
+  return text;
+}
+
+/**
+ * This is a non-streaming version of the primary `llm`.
+ * It uses the same model and logic but waits for the full response.
+ * Useful for evaluation tasks where the complete output is needed at once.
+ */
+export const evaluatorLLM = new RunnableLambda({
+  func: (input) => invokeGoogleSdkForNonStreaming(input.messages),
+});
+
 // =================================================================
 // SECTION 2: STANDARD LANGCHAIN WRAPPERS FOR OTHER MODELS
 // =================================================================

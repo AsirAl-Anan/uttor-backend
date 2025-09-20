@@ -1,8 +1,14 @@
+// user.service.js
 import User from '../models/User.js';
 import Preferences from '../models/preferences.js';
 import { Chat } from '../models/chat.model.js';
 import { Message } from '../models/message.model.js';
-import { CqExam } from '../models/cq.exam.model.js';
+import { CqExam } from "../models/cq.exam.model.js";
+import { CqResult } from "../models/cq.result.model.js";
+import { AnswerEvaluation } from "../models/cq.result.model.js";
+import  CreativeQuestion  from "../models/creativeQuestion.model.js";
+import McqExam from "../models/mcq.exam.model.js";
+import { MCQ } from "../models/mcq.exam.model.js";
 export const findUserById = async (id) => {
   return await User.findById(id).populate('preferences');
 };
@@ -89,7 +95,16 @@ export const getExamAndAttempt = async (examId, userId) => {
     if (!attempt) {
         // If no attempt, don't send questions (pre-start view)
         delete exam.questions;
-    } else if (attempt.status !== 'completed') {
+    } else if (attempt.status === 'completed') {
+        // --- NEW LOGIC ADDED HERE ---
+        // If the attempt is completed, try to find the evaluation result.
+        const result = await CqResult.findOne({ examId, userId }).lean();
+        if (result) {
+            // Attach the full result document to the attempt object.
+            attempt.result = result;
+        }
+        // If completed, the full question objects (with answers) are sent by default.
+    } else { // This means attempt.status is 'in-progress'
         // If in-progress, send questions but strip out the answers
         exam.questions?.forEach(q => {
             delete q.aAnswer;
@@ -100,7 +115,6 @@ export const getExamAndAttempt = async (examId, userId) => {
             delete q.dAnswerImage;
         });
     }
-    // If completed, the full question objects (with answers) are sent.
 
     return { exam, attempt: attempt || null };
 };
@@ -167,4 +181,18 @@ export const finishExamAttempt = async (examId, userId) => {
     }
 
     return exam.attempts.find(a => a.userId === userId.toString());
+};
+export const getExamHistory = async (userId) => {
+    // Find all results for the user
+    // Populate the 'examId' field to get the exam's title and subject
+    // Sort by creation date to show the most recent exams first
+    const history = await CqResult.find({ userId })
+        .populate({
+            path: 'examId',
+            select: 'title subject' // Only fetch the title and subject for efficiency
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+
+    return history;
 };

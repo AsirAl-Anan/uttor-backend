@@ -118,19 +118,15 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
         if (!question_count) {
             logger.info('[Exam Tool] Missing question_count. Asking user and providing button.');
             
-            // ===== MODIFICATION START: ADDING CONTEXTUAL BUTTON =====
-            // We get the full response instead of streaming it.
             const responseText = await responseChain.invoke({
                 situation: 'MISSING_QUESTION_COUNT',
-                parameters: { maxQuestions: maxQuestions, subject: canonicalSubjectName, chapter: chapter }, // Added chapter for more context
+                parameters: { maxQuestions: maxQuestions, subject: canonicalSubjectName, chapter: chapter },
                 user_Language: userVersion,
                 chat_history
             });
 
-            // The payload should be the full command the user would have typed.
             const buttonPayload = `Create a ${exam_type} exam on ${canonicalSubjectName} ${chapter} with ${maxQuestions} questions`;
 
-            // Yield a single object with both text and the button data.
             yield {
                 text: responseText,
                 buttons: [{
@@ -138,7 +134,6 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
                     payload: buttonPayload
                 }]
             };
-            // ===== MODIFICATION END =====
             return;
         }
 
@@ -193,8 +188,18 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
             return;
         }
 
-        const matchedChapter = matchedChapters[0];
-        const canonicalChapterName = matchedChapter.name;
+        const matchedChapterObject = matchedChapters[0];
+        const canonicalChapterName = matchedChapterObject.name;
+        
+        const matchedChapterIndex = subjectDoc.chapters.findIndex(
+            chap => chap.name === canonicalChapterName
+        );
+
+        if (matchedChapterIndex === -1) {
+            logger.error(`[Exam Tool] Internal error: Could not find the index for a matched chapter named "${canonicalChapterName}"`);
+            yield { text: "I'm sorry, a small internal error occurred. Please try asking again." };
+            return;
+        }
         
         // --- Step 5: DECISIVE ACTION ---
         const workingResponse = await responseChain.invoke({
@@ -213,10 +218,10 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
                 const queryVersion = userVersion.charAt(0).toUpperCase() + userVersion.slice(1);
                 
                 const allPossibleChapterNames = [
-                    matchedChapter.name,
-                    ...(matchedChapter.aliases?.english || []),
-                    ...(matchedChapter.aliases?.bangla || []),
-                    ...(matchedChapter.aliases?.banglish || []),
+                    matchedChapterObject.name,
+                    ...(matchedChapterObject.aliases?.english || []),
+                    ...(matchedChapterObject.aliases?.bangla || []),
+                    ...(matchedChapterObject.aliases?.banglish || []),
                 ];
 
                 logger.info(`[Exam Tool] Querying for Subject ID: ${subjectDoc._id}, Chapter Names: [${allPossibleChapterNames.join(', ')}], Version: ${queryVersion}`);
@@ -271,12 +276,12 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
                     source: source,
                     subject: {
                         code: subjectDoc.subjectCode,
+                        id: subjectDoc._id,
                     },
-                    chapters: [
-                        {
-                            index: matchedChapter.index,
-                        }
-                    ]
+                    chapter: { 
+                        index: matchedChapterIndex, 
+                        name: canonicalChapterName,
+                    }
                 };
 
                 const newExam = new CqExam(examData);
@@ -285,7 +290,6 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
                 
                 const examId = savedExam._id.toString();
 
-                // ===== MODIFICATION START: ADDING STATIC NAVLINK BUTTON ON SUCCESS =====
                 const successText = await responseChain.invoke({
                     situation: 'EXAM_CREATED_SUCCESS',
                     parameters: {
@@ -300,8 +304,6 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
                     chat_history
                 });
 
-                // This payload is a URL path for client-side navigation.
-                // The frontend should check for `type: 'link'` and render a NavLink.
                 yield {
                     text: successText,
                     buttons: [
@@ -312,7 +314,6 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
                         }
                     ]
                 };
-                // ===== MODIFICATION END =====
                 return;
 
             } else {
@@ -332,6 +333,131 @@ const handleCreateExam = async function* ({ parameters, userId, chat_history }) 
     } catch (error) {
         logger.error('[Exam Tool] Error creating exam:', error);
         yield { text: "I'm sorry, I ran into an unexpected problem. My developers have been notified." };
+    }
+};
+
+
+// ===================================================================
+// ==================== NEW STATIC FUNCTION ==========================
+// ===================================================================
+
+/**
+ * Creates a CQ exam statically without conversational interaction.
+ * @param {object} params - The parameters for creating the exam.
+ * @param {string} params.userId - The ID of the user creating the exam.
+ * @param {string} params.subjectName - The name of the subject (e.g., "Physics").
+ * @param {string} params.chapterName - The name of the chapter (e.g., "Chapter 1").
+ * @param {number} params.questionCount - The number of questions for the exam.
+ * @returns {Promise<string>} The ID of the newly created exam.
+ * @throws {Error} Throws an error if validation fails or exam creation is unsuccessful.
+ */
+export const createExam = async ({ userId, subjectName, chapterName, questionCount }) => {
+    logger.info(`[Static Exam Service] Attempting to create exam for user ${userId}`);
+
+    try {
+        // --- Step 0: Basic validation ---
+        if (!userId || !subjectName || !chapterName || !questionCount) {
+            throw new Error("Missing required parameters: userId, subjectName, chapterName, or questionCount.");
+        }
+
+        // --- Step 1: Fetch User ---
+        const user = await User.findById(userId);
+        if (!user) {
+            throw new Error(`User not found with ID: ${userId}`);
+        }
+        const userVersion = (user?.version || 'English').toLowerCase();
+
+        // --- Step 2: Validate Subject ---
+        const subjectRegex = new RegExp(subjectName.trim(), 'i');
+        const subjectDocs = await Subject.find({
+            level: user.level,
+            version: userVersion,
+            $or: [ { name: subjectRegex }, { 'aliases.english': subjectRegex }, { 'aliases.bangla': subjectRegex }, { 'aliases.banglish': subjectRegex } ]
+        });
+
+        if (subjectDocs.length === 0) throw new Error(`Subject '${subjectName}' not found for user's level and version.`);
+        if (subjectDocs.length > 1) throw new Error(`Ambiguous subject: '${subjectName}' matched multiple subjects.`);
+        
+        const subjectDoc = subjectDocs[0];
+        const canonicalSubjectName = subjectDoc.name;
+
+        // --- Step 3: Validate Question Count ---
+        const maxQuestions = subjectDoc.group === 'science' ? 8 : 11;
+        const requestedCount = parseInt(questionCount, 10);
+        if (isNaN(requestedCount) || requestedCount <= 0 || requestedCount > maxQuestions) {
+            throw new Error(`Invalid question count: ${questionCount}. Must be a number between 1 and ${maxQuestions}.`);
+        }
+
+        // --- Step 4: Validate Chapter ---
+        const chapterRegex = new RegExp(chapterName.trim(), 'i');
+        const matchedChapters = subjectDoc.chapters.filter(chap => {
+            if (chapterRegex.test(chap.name)) return true;
+            if (chap.aliases) {
+                if (chap.aliases.english && chap.aliases.english.some(alias => chapterRegex.test(alias))) return true;
+                if (chap.aliases.bangla && chap.aliases.bangla.some(alias => chapterRegex.test(alias))) return true;
+                if (chap.aliases.banglish && chap.aliases.banglish.some(alias => chapterRegex.test(alias))) return true;
+            }
+            return false;
+        });
+
+        if (matchedChapters.length === 0) throw new Error(`Chapter '${chapterName}' not found in subject '${canonicalSubjectName}'.`);
+        if (matchedChapters.length > 1) throw new Error(`Ambiguous chapter: '${chapterName}' matched multiple chapters in '${canonicalSubjectName}'.`);
+        
+        const matchedChapterObject = matchedChapters[0];
+        const canonicalChapterName = matchedChapterObject.name;
+        const matchedChapterIndex = subjectDoc.chapters.findIndex(chap => chap.name === canonicalChapterName);
+        if (matchedChapterIndex === -1) throw new Error("Internal server error: Could not determine chapter index.");
+
+        // --- Step 5: Fetch Questions and Create Exam ---
+        const queryVersion = userVersion.charAt(0).toUpperCase() + userVersion.slice(1);
+        const allPossibleChapterNames = [
+            matchedChapterObject.name,
+            ...(matchedChapterObject.aliases?.english || []),
+            ...(matchedChapterObject.aliases?.bangla || []),
+            ...(matchedChapterObject.aliases?.banglish || []),
+        ];
+
+        const questions = await CreativeQuestion.aggregate([
+            { $match: { 'version': queryVersion, 'subject': subjectDoc._id, $or: [ { 'chapter.englishName': { $in: allPossibleChapterNames } }, { 'chapter.banglaName': { $in: allPossibleChapterNames } } ] } },
+            { $sample: { size: requestedCount } }
+        ]);
+
+        if (questions.length === 0) {
+            throw new Error(`No questions found for subject '${canonicalSubjectName}' and chapter '${canonicalChapterName}'.`);
+        }
+        if (questions.length < requestedCount) {
+            logger.warn(`[Static Exam Service] Insufficient questions found. Requested ${requestedCount}, but found ${questions.length}. Proceeding with available questions.`);
+        }
+
+        const timeLimitInMinutes = calculateExamTime('CQ', questions.length);
+
+        const examData = {
+            questions: questions.map(q => q._id),
+            creator: user._id.toString(),
+            isActive: true,
+            title: `CQ Exam: ${canonicalSubjectName} - ${canonicalChapterName}`,
+            duration: timeLimitInMinutes,
+            source: 'database',
+            subject: {
+                code: subjectDoc.subjectCode,
+                id: subjectDoc._id,
+            },
+            chapter: { 
+                index: matchedChapterIndex, 
+                name: canonicalChapterName,
+            }
+        };
+
+        const newExam = new CqExam(examData);
+        const savedExam = await newExam.save();
+        
+        logger.info(`[Static Exam Service] Exam ${savedExam._id} created successfully.`);
+        return savedExam._id.toString();
+
+    } catch (error) {
+        logger.error('[Static Exam Service] Failed to create exam:', error);
+        // Re-throw the error so the calling function can handle it
+        throw error;
     }
 };
 
