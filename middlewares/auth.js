@@ -3,7 +3,6 @@ import User from '../models/User.js';
 import { errorResponse } from '../utils/response.js';
 export const authenticateJWT = async (req, res, next) => {
   try {
-    console.log(true)
     const token = req.cookies.token;
 
     if (!token) {
@@ -34,7 +33,6 @@ export const authenticateJWT = async (req, res, next) => {
 };
 
 export const authenTicateSession =async (req, res, next) => {
-  console.log(req.session)
  
   if(!req.session.passport){
    

@@ -32,6 +32,7 @@ const cqExamSchema = new mongoose.Schema({
     }],
     creator: {
         type: String,
+        
         required: true,
     },
     isActive: {
@@ -66,7 +67,8 @@ const cqExamSchema = new mongoose.Schema({
 
     },
     // Add the attempts array here
-    attempts: [attemptSchema]
+    attempts: [attemptSchema],
+    
 }, { timestamps: true });
 
 export const CqExam = academicDb.model("CqExam", cqExamSchema);

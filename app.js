@@ -12,7 +12,9 @@ import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
 import examRoutes from './routes/exam.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
-
+import questionRouter from './routes/question.routes.js';
+import hubRoutes from './routes/hub.routes.js';
+import noteRoutes from './routes/note.routes.js';
 // ===== MODIFICATION START: Import path and fs for file handling =====
 import path from 'path';
 import fs from 'fs';
@@ -82,10 +84,12 @@ app.use(passport.session());
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/exams', examRoutes)
+app.use('/api/questions', questionRouter )
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
-
+app.use('/api/hub', hubRoutes);
+app.use('/api/notes', noteRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

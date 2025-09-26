@@ -30,7 +30,7 @@ export const updateUserProfile = async (userId, updateData) => {
 
 export const getUserProfile = async (userId) => {
   
-  return await User.findById(userId).populate('preferences').select('-__v -createdAt -updatedAt');
+  return await User.findById(userId).populate('preferences').select(' -__v -createdAt -updatedAt ');
 };
 
 export const updatePreferences = async (userId, preferencesData) => {

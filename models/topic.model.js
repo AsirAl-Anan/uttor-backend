@@ -2,88 +2,12 @@ import mongoose from "mongoose";
 // Import the SubjectEmbedding model to interact with it in the middleware
 import SubjectEmbedding from "./subject.embedding.model.js"; 
 import { academicDb } from "../config/db.js";
-//old schema
-// const topicSchema = new mongoose.Schema(
-//   {
-//     subjectId: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "Subject",
-//       required: true,
-//     },
-//     chapterName: {
-//       bangla: { type: String },
-//       english: { type: String },
-//       chapterId: { type: mongoose.Schema.Types.ObjectId },
-//     },
-//     englishName: { type: String, required: true },
-//     banglaName: { type: String, required: true },
-//     type: { type: String, enum: ["theory", "practical"], default: "theory" },
-//     questionTypes: [
-//       {
-//         english: { type: String },
-//         bangla: { type: String },
-//       },
-//     ],
-//     aliases: {
-//       english: [{ type: String, required: true }],
-//       bangla: [{ type: String, required: true }],
-//       banglish: [{ type: String, required: true }],
-//     },
-//     segments: [
-//       {
-//         uniqueKey: { type: String, required: true },
-//         title: {
-//           english: { type: String, required: true },
-//           bangla: { type: String, required: true },
-//         },
-//         description: {
-//           english: { type: String, required: true },
-//           bangla: { type: String, required: true },
-//         },
-//         images: [
-//           {
-//             url: { type: String },
-//             title: {
-//               english: { type: String },
-//               bangla: { type: String },
-//             },
-//             description: {
-//               english: { type: String },
-//               bangla: { type: String },
-//             },
-//           },
-//         ],
-//         formulas: [
-//           {
-//             equation: { type: String },
-//             derivation: {
-//               english: { type: String },
-//               bangla: { type: String },
-//             },
-//             explanation: {
-//               english: { type: String },
-//               bangla: { type: String },
-//             },
-//           },
-//         ],
-//         aliases: {
-//           english: [{ type: String, required: true }],
-//           bangla: [{ type: String, required: true }],
-//           banglish: [{ type: String, required: true }],
-//         },
-//       },
-//     ],
-//   },
-//   {
-//     timestamps: true,
-//   }
-// );
-//new schema
+
 const topicSchema = new mongoose.Schema(
   {
-    linkingId: { type: String, required: true, index: true },
+    linkingId: { type: String, required: true, index: true }, //to link the two versions e.g bangla and english of the same topic
     version: { type: String, enum: ['english', 'bangla'], required: true },
-    name: { type: String, required: true }, // Replaces englishName/banglaName
+    name: { type: String, required: true }, 
 
     subjectId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -94,6 +18,10 @@ const topicSchema = new mongoose.Schema(
       name: { type: String }, // Chapter name in the topic's language
       chapterId: { type: mongoose.Schema.Types.ObjectId },
     },
+    chapterIndex:{
+      type: Number,
+      required: true,
+    },// new field/ starts from zero
     type: { type: String, enum: ["theory", "practical"], default: "theory" },
     questionTypes: [
       {
@@ -104,6 +32,10 @@ const topicSchema = new mongoose.Schema(
       english: [{ type: String, required: true }],
       bangla: [{ type: String, required: true }],
       banglish: [{ type: String, required: true }],
+    },
+    tags:{
+      type: [String], //new field
+      required: true,
     },
     segments: [
       {

@@ -1,3 +1,4 @@
+// user.model.js
 import mongoose from 'mongoose';
 import { userDb } from '../config/db.js';
 
@@ -7,9 +8,10 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   avatar: { type: String },
 
-  // Profile completion fields
+  aura: { type: Number, default: 0, index: true }, 
 
-  name: { type: String,  },
+  // Profile completion fields
+  name: { type: String },
 
   // Academic information
   level: { type: String, enum: ["SSC", "HSC"] },

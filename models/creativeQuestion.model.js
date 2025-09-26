@@ -65,29 +65,22 @@ const creativeQuestionSchema = new mongoose.Schema({
     englishName: { type: String, required: true },
     banglaName: { type: String, required: true },
   },
-  aliases:{
-    english: [{ type: String }],
-    bangla: [{ type: String }],
-    banglish: [{ type: String }],
+  source:{
+    type: String,
+    required: true,
+    enum: ['database', 'ai']
+
   }
 
 }, { timestamps: true });
 
-// (All your commented-out 'pre' hooks are here...)
+
 
 // Optional: Add indexes for better query performance on frequently searched fields like topic IDs
-// creativeQuestionSchema.index({ 'cTopic.topicId': 1 });
-// creativeQuestionSchema.index({ 'dTopic.topicId': 1 });
-// creativeQuestionSchema.index({ 'cSubTopic.topicId': 1 });
-// creativeQuestionSchema.index({ 'dSubTopic.topicId': 1 });
+ creativeQuestionSchema.index({ 'cTopic.topicId': 1 });
+ creativeQuestionSchema.index({ 'dTopic.topicId': 1 });
+ creativeQuestionSchema.index({ 'cSubTopic.topicId': 1 });
+ creativeQuestionSchema.index({ 'dSubTopic.topicId': 1 });
 
-
-// *** ADD THIS LINE FOR TEXT SEARCH ***
-// This creates the necessary text index for the $text operator to work.
-creativeQuestionSchema.index({ stem: 'text',a: 'text', b: 'text', c: 'text', d: 'text' });
-creativeQuestionSchema.index({ 'cTopic.englishName': 'text', 'cTopic.banglaName': 'text'})
-creativeQuestionSchema.index({ 'dTopic.englishName': 'text', 'dTopic.banglaName': 'text'})
-creativeQuestionSchema.index({'aliases.english': 'text', 'aliases.bangla': 'text', 'aliases.banglish': 'text'})
-creativeQuestionSchema.index({'cType': 'text', 'dType': 'text'})
 const CreativeQuestion = academicDb.model('CreativeQuestion', creativeQuestionSchema);
 export default CreativeQuestion;

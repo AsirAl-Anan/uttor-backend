@@ -58,6 +58,14 @@ const cqResultSchema = new mongoose.Schema({
     // RECOMMENDED ADDITIONS: For maintenance and debugging
     aiModelVersion: { type: String },
     errorMessage: { type: String },
+    auraChange: { 
+    type: Number, 
+    default: 0 
+},
+auraMessageSeen: { 
+    type: Boolean, 
+    default: false 
+},
 }, { timestamps: true });
 
 // RECOMMENDED ADDITION: Hook for data integrity

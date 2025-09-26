@@ -1,5 +1,30 @@
+// models/mcq.exam.model.js
 import { academicDb } from "../config/db.js";
 import mongoose from "mongoose";
+
+const mcqAttemptSchema = new mongoose.Schema({
+    userId: {
+        type: String,
+        required: true,
+    },
+    startTime: {
+        type: Date,
+        required: true,
+    },
+    status: {
+        type: String,
+        enum: ['in-progress', 'completed'],
+        required: true,
+    },
+    answers: {
+        type: Map,
+        of: String,
+        default: {}
+    },
+    endTime: {
+        type: Date,
+    }
+}, { _id: false });
 
 const mcqSchema = new mongoose.Schema({
     questionText: {
@@ -29,7 +54,7 @@ const mcqSchema = new mongoose.Schema({
                 required: true,
                 default: false
             },
-            optionImage: { // Optional: for options with diagrams
+            optionImage: {
                 type: String,
                 default: null
             },
@@ -40,7 +65,7 @@ const mcqSchema = new mongoose.Schema({
             }
         }
     ],
-    explanation: { // Optional: explanation for user
+    explanation: {
         type: String,
         default: ''
     },
@@ -62,20 +87,24 @@ const mcqExamSchema = new mongoose.Schema({
     },
     level: {
         type: String,
-        enum: ['SSC', 'HSC'],
-        required: true,
     },
     subject: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Subject",
-        required: true,
-        
+        id: { 
+            type: mongoose.Schema.Types.ObjectId, 
+            ref: "Subject", 
+            required: true 
+        },
     },
-    chapterIndex: {
-        type: Number,
-        required: true,
+    chapter: {
+        name: {
+            type: String,
+            required: true,
+        },
+        index: {
+            type: Number,
+            required: true,
+        }
     },
-   
     board: {
         type: String,
         enum: ['All', 'Dhaka', 'Rajshahi', 'Cumilla', 'Jashore', 'Chattogram', 'Barishal', 'Sylhet', 'Dinajpur', 'Mymensingh', 'Technical', 'Madrassah'],
@@ -89,22 +118,32 @@ const mcqExamSchema = new mongoose.Schema({
         type: Number,
         required: [true, "Time limit is required"],
     },
-    questions: [mcqSchema], // ✅ embed mcqSchema here
+    questions: [mcqSchema],
     creator: {
-     type: String,
-     required: true,
+        type: String,
+        required: true,
     },
     isActive: {
         type: Boolean,
         default: true,
+    },
+    source: {
+        type: String,
+        required: true,
+        enum: ["database", "ai"]
+    },
+    // ======================== THE FIX ========================
+    attempts: {
+        type: [mcqAttemptSchema],
+        default: [] // Ensure this field always exists, even if empty.
     }
+    // ========================================================
 }, {
     timestamps: true
 });
 
-// ✅ Validation: ensure exactly one correct option
 mcqExamSchema.path('questions').validate(function (questions) {
-    if (!questions) return false;
+    if (!questions || questions.length === 0) return false;
     for (const question of questions) {
         const correctOptions = question.options.filter(opt => opt.isCorrect);
         if (correctOptions.length !== 1) {
@@ -112,9 +151,8 @@ mcqExamSchema.path('questions').validate(function (questions) {
         }
     }
     return true;
-}, 'Each question must have exactly one correct answer.');
+}, 'Each question must have exactly one correct answer and there must be at least one question.');
+
 export const MCQ = academicDb.model("MCQ", mcqSchema);
-
 const McqExam = academicDb.model("McqExam", mcqExamSchema);
-
 export default McqExam;

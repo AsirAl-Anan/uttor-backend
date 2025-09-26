@@ -8,11 +8,6 @@ import { examTool } from './tools/exam.tool.js';
 import logger from '../utils/logger.js';
 import { chatMemoryService } from './chatMemory.service.js';
 
-/**
- * @file Service for intent classification and routing to different tools.
- */
-
-// Helper object to handle voice message generation
 const voiceMessageTool = {
   handleGenerateVoiceMessage: async ({ parameters, userId }) => {
     try {
@@ -36,26 +31,10 @@ const voiceMessageTool = {
   }
 };
 
-/**
- * Helper to wrap a non-streamable buffer into a streamable async generator.
- * @param {Buffer} buffer - The audio buffer to be streamed.
- * @returns {AsyncGenerator<{audio: Buffer, type: 'audio'}>}
- */
 async function* bufferToStream(buffer) {
     yield { audio: buffer, type: 'audio' };
 }
 
-/**
- * Classifies the user's intent and routes the query to the appropriate tool.
- * This service acts as the main entry point for processing all user chat queries.
- * 
- * @param {object} params
- * @param {string} params.query - The user's original question text.
- * @param {string[]} params.images - An array of image URLs from Cloudinary.
- * @param {string} params.chatId - The current chat session ID.
- * @param {object} params.userId - The user object from the socket.
- * @returns {Promise<AsyncGenerator<any>>} A stream of response chunks from the selected tool.
- */
 const generateResponseStream = async ({ query, images, chatId, userId }) => {
   try {
     const chat_history = await chatMemoryService.getHistory(chatId);
@@ -63,7 +42,18 @@ const generateResponseStream = async ({ query, images, chatId, userId }) => {
 
     const intentQuery = query || (images && images.length > 0 ? "analyze the provided image" : "");
     logger.info(`[Intent Service] Classifying intent for query: "${intentQuery}" with history.`);
+    
     const classification = await intentChain.invoke({ query: intentQuery, chat_history });
+    
+    // ======================== THE DEFINITIVE FIX ========================
+    // If images were provided in this turn and the intent is to create an exam,
+    // we must manually inject the image URL into the parameters because the
+    // text-only intent chain would have missed it.
+    if (images && images.length > 0 && classification.intent === 'create_exam') {
+        logger.info(`[Intent Service] Injecting image_url from current message into exam parameters.`);
+        classification.parameters.image_url = images[0]; // Use the first image
+    }
+    // ====================================================================
     
     logger.info(`[Intent Service] Classified intent: ${classification.intent}`, classification.parameters);
 
@@ -72,6 +62,7 @@ const generateResponseStream = async ({ query, images, chatId, userId }) => {
         return await dbSearchTool.handleSearch({ parameters: classification.parameters });
       
       case 'create_exam':
+        // Now, the parameters object correctly contains the image_url if it was provided.
         return await examTool.handleCreateExam({ parameters: classification.parameters, userId, chat_history });
 
       case 'GENERATE_VOICE_MESSAGE':

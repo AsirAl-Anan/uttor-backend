@@ -102,7 +102,8 @@ const configurations = {
     { name: 'ai', maxCount: 3 }, 
     { name: 'evaluate', maxCount: 10 }, 
     { name: 'documents', maxCount: 8 },
-    { name: 'topic', maxCount: 6 }
+    { name: 'topic', maxCount: 6 },
+    { name: 'hub', maxCount: 5 }
   ]),
   
   // Any files with high limit (80 files)
